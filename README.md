@@ -49,6 +49,7 @@ The database field can be blank. In this case the default database name svc2infl
     address = localhost
     username = your_user
     password = your_password
+    sshkey = path_to_ssh_key
 
     tag_name1 = value1
     tag_name2 = value2
@@ -58,7 +59,7 @@ You can add any SVC sections you need. The script will be collect the metrics in
 
 A SVC section use the name of your SVC equipment (a short name or a nickname why not).
 
-The fields address, username and password are required. It's the same informations you use for a SSH connection.
+The fields address, username and password or ssh_key are required. It's the same informations you use for a SSH connection.
 
 You can also add __tags__ if you need it. These tags are used to described some informations to enrich your time series. For example you can specify if this SVC is used in a production environment or it's location. Example :
 
