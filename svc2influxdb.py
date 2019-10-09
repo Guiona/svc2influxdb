@@ -12,7 +12,6 @@ from datetime import datetime
 from influxdb import InfluxDBClient
 from requests.exceptions import ConnectionError
 
-
 def timestamp_ms():
     return int((datetime.utcnow() - datetime(1970, 1, 1)).total_seconds() * 1000)
 
@@ -55,10 +54,15 @@ class ConfigFile(object):
             equipment['tags'] = {'svc': section}
             equipment['address'] = self._conf[section]['address']
             equipment['login'] = self._conf[section]['login']
-            equipment['password'] = self._conf[section]['password']
+
+            if self._conf.has_option(section, 'sshkey'):
+                equipment['sshkey'] = self._conf[section]['sshkey']
+            else: 
+                if self._conf.has_option(section, 'password'):
+                    equipment['password'] = self._conf[section]['password']
 
             for item in self._conf[section]:
-                if item not in ['name', 'address', 'login', 'password']:
+                if item not in ['name', 'address', 'login', 'password', 'sshkey']:
                     equipment['tags'][item] = self._conf[section][item]
 
             yield equipment
@@ -150,14 +154,19 @@ class SSHCollector(object):
         self._builder = None
         self._address = kwargs['address']
         self._user = kwargs['login']
-        self._password = kwargs['password']
-
+        if kwargs['sshkey']:
+            self._sshkey = kwargs['sshkey']
+        else:
+            self._password = kwargs['password']
         self._client = paramiko.SSHClient()
         self._client.load_system_host_keys()
         self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         try:
-            self._client.connect(hostname=self._address, username=self._user, password=self._password)
+            if self._sshkey:
+                self._client.connect(hostname=self._address, username=self._user, key_filename=self._sshkey)
+            else:
+                self._client.connect(hostname=self._address, username=self._user, password=self._password)
         except paramiko.ssh_exception.AuthenticationException:
             print('ERROR: Authentication Error on SVC %s' % self._address)
             sys.exit(1)
