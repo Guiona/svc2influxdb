@@ -7,6 +7,7 @@ Works with all IBM kind of hardware running SVC (FlashSystem V9000, V840, ...)
 ## Requirements
 
 This script use python 3 and modules like 'paramiko', 'requests' and 'influxdb'. You can install them by using this command line:
+NB: On debian Jessie need to install libssl-dev before install python's modules
 
 `$ pip install -r requirements.txt`
 
