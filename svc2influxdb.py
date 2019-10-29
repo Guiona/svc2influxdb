@@ -8,6 +8,8 @@ import csv
 import os
 import paramiko
 import sys
+import daemon
+import time
 from datetime import datetime
 from influxdb import InfluxDBClient
 from requests.exceptions import ConnectionError
@@ -32,6 +34,19 @@ class ConfigFile(object):
             print('ERROR: The format of the configuration file is incorrect')
             sys.exit(1)
 
+    # Get General Section
+    def get_config(self):
+        """ Return information about general configuration """
+
+        general = \
+            {
+             'mode': self._conf['General']['mode'] if self._conf.has_option('General', 'mode') else 'standalone',
+             'interval': int(self._conf['General']['interval']) if self._conf.has_option('General', 'interval') else int('300'),
+             'toto': self.conf['General']['toto'] if self._conf.has_option('General', 'toto') else None
+            }
+        return general
+
+    # Get INFLUXDB section
     def get_influxdb(self):
         """ Return information about the database instance """
 
@@ -44,11 +59,12 @@ class ConfigFile(object):
             }
         return database
 
+    # Get SVC section
     def get_svc(self):
         """ Return information about the IBM SVC equipments defined in the configuration file """
         equipment = {}
         for section in self._conf.sections():
-            if section == 'INFLUXDB':
+            if (section == 'INFLUXDB') or (section == 'General'):
                 continue
 
             equipment['tags'] = {'svc': section}
@@ -154,16 +170,19 @@ class SSHCollector(object):
         self._builder = None
         self._address = kwargs['address']
         self._user = kwargs['login']
-        if kwargs['sshkey']:
+
+        # Use or not ssh key to authentication
+        if 'sshkey' in kwargs:
             self._sshkey = kwargs['sshkey']
         else:
             self._password = kwargs['password']
+
         self._client = paramiko.SSHClient()
         self._client.load_system_host_keys()
         self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         try:
-            if self._sshkey:
+            if hasattr('self', '_sshkey'):
                 self._client.connect(hostname=self._address, username=self._user, key_filename=self._sshkey)
             else:
                 self._client.connect(hostname=self._address, username=self._user, password=self._password)
@@ -183,7 +202,6 @@ class SSHCollector(object):
 
     def collect(self):
         raise NotImplementedError
-
 
 class PoolSSHCollector(SSHCollector):
     """ Concrete class specialized in the data collection of the SVC's pool """
@@ -218,46 +236,73 @@ class VolumeSSHCollector(SSHCollector):
 
         return [self._builder.parse(line, 'volume') for line in volume_details]
 
-
+# Main Program
 if __name__ == '__main__':
+    # Arguments from command line
     parser = argparse.ArgumentParser(description='SVC metrics collector for InfluxDB')
     parser.add_argument('config', type=str, help='The configuration file')
     parser.add_argument('-f', '--fixed', action="store_true", default=False, help='Use a same collect time for all SVC')
+    parser.add_argument('-t', '--test', action="store_true", default=False, help='Test connectivity')
     args = parser.parse_args()
 
+    # Configuration From config file for influxdb
     configuration = ConfigFile(args.config).get_influxdb()
     client = InfluxDBClient(host=configuration['address'],
                             username=configuration['username'],
                             password=configuration['password'])
 
-    # if the argument 'fixed' is used we use a same timestamp when all the measurements will be insert
-    now = timestamp_ms()
-    pool_series_builder = PoolSeriesBuilder(fixed_time=now) if args.fixed else PoolSeriesBuilder()
-    volume_series_builder = VolumeSeriesBuilder(fixed_time=now) if args.fixed else VolumeSeriesBuilder()
+    # General configuration From config file
+    general = ConfigFile(args.config).get_config()
 
-    series = []
-    for svc in ConfigFile(args.config).get_svc():
-        pool_series_builder.add_extras_tags(svc['tags'])
-        volume_series_builder.add_extras_tags(svc['tags'])
+    # test connectivity
+    if args.test:
+        print("test mode")
+        sys.exit(9)
 
-        svc_pool = PoolSSHCollector(**svc)
-        svc_volume = VolumeSSHCollector(**svc)
+    # Standalone Mode
+    if general['mode'] == 'standalone':
 
-        svc_pool.add_series_builder(pool_series_builder)
-        svc_volume.add_series_builder(volume_series_builder)
+        # if the argument 'fixed' is used we use a same timestamp when all the measurements will be insert
+        now = timestamp_ms()
+        pool_series_builder = PoolSeriesBuilder(fixed_time=now) if args.fixed else PoolSeriesBuilder()
+        volume_series_builder = VolumeSeriesBuilder(fixed_time=now) if args.fixed else VolumeSeriesBuilder()
 
-        series += svc_pool.collect()
-        del svc_pool
-        series += svc_volume.collect()
-        del svc_volume
+        series = []
+        for svc in ConfigFile(args.config).get_svc():
+            pool_series_builder.add_extras_tags(svc['tags'])
+            volume_series_builder.add_extras_tags(svc['tags'])
 
-    try:
-        client.create_database(configuration['database'])
-    except ConnectionError:
-        print('ERROR: Cannot access to the InfluxDB database')
+            svc_pool = PoolSSHCollector(**svc)
+            svc_volume = VolumeSSHCollector(**svc)
+
+            svc_pool.add_series_builder(pool_series_builder)
+            svc_volume.add_series_builder(volume_series_builder)
+
+            series += svc_pool.collect()
+            del svc_pool
+            series += svc_volume.collect()
+            del svc_volume
+
+        try:
+            client.create_database(configuration['database'])
+        except ConnectionError:
+            print('ERROR: Cannot access to the InfluxDB database')
+            sys.exit(1)
+
+        # All the series are inserted into the database at the end of the batch to be sure we have a consistent batch
+        # with all the measurements en equipments.
+        for serie in series:
+            client.write_points(database=configuration['database'], points=serie, time_precision='ms')
+
+    # Daemon mode
+    elif general['mode'] == 'daemon':
+        while True:
+            print(general['interval'])
+            with open("/tmp/current_time.txt", "w") as f:
+                f.write("The time is now " + time.ctime())
+            time.sleep(general['interval'])
+
+    # Unknown mode
+    else:
+        print('ERROR: Mode "' + general['mode'] + '" unknown.')
         sys.exit(1)
-
-    # All the series are inserted into the database at the end of the batch to be sure we have a consistent batch
-    # with all the measurements en equipments.
-    for serie in series:
-        client.write_points(database=configuration['database'], points=serie, time_precision='ms')

@@ -1,3 +1,4 @@
 paramiko>=1.15.2
 requests>=2.12.1
 influxdb>=4.0.0
+python-daemon>=2.2.3

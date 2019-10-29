@@ -4,12 +4,24 @@ A simple storage metrics collector (written in Python) from IBM SVC equipments w
 
 Works with all IBM kind of hardware running SVC (FlashSystem V9000, V840, ...)
 
+Tested on Centos and RedHat 7.
+
 ## Requirements
 
-This script use python 3 and modules like 'paramiko', 'requests' and 'influxdb'. You can install them by using this command line:
-NB: On debian Jessie need to install libssl-dev before install python's modules
+This script use python 3 and modules like 'paramiko', 'requests' and 'influxdb' in virtualenv. 
+You can install them by using this command line:
 
-`$ pip install -r requirements.txt`
+`$ yum install python3 python3-pip`
+`$ pip install --upgrade pip`
+
+## Installation
+
+
+`$ git clone https://github.com/Guiona/svc2influxdb.git`
+`$ cd svc2influxdb`
+`$ ./setup.sh`
+`$ su - svc2influxdb`
+`$ ./setup_venv.sh`
 
 ## Usage
 
