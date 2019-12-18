@@ -1,0 +1,15 @@
+[Unit]
+Description=svc2influxdb collector
+After=network.target
+
+[Service]
+Type=simple
+PIDFile=/var/run/svc2influxdb.pid
+User=svc2influxdb
+WorkingDirectory=/opt/svc2influxdb
+ExecStartPre=. /opt/svc2influxdb/.venv/bin/activate
+ExecStart=/opt/svc2influxdb/.venv/bin/python /opt/svc2influxdb/svc2influxdb.py /opt/svc2influxdb/svc2influxdb.conf
+ExecStopPre=. /opt/isilon_data_insights_connector/.venv/bin/deactivate
+
+[Install]
+WantedBy=multi-user.target
